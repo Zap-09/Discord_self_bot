@@ -48,25 +48,25 @@ async def on_message(message):
                 continue
 
             file_url = attachment.url
-            clean_url = file_url.split('?')[0]
+            clean_url = file_url.split("?")[0]
 
             if any(clean_url.endswith(ext) for ext in [".jpeg", ".png", ".jpg", ".webp"]):
                 image_file = await attachment.to_file()
                 images_to_send.append(image_file)
 
-            elif any(clean_url.endswith(ext) for ext in ['.mp4', '.mov', '.avi', '.webm', '.mkv']):
+            elif any(clean_url.endswith(ext) for ext in [".mp4", ".mov", ".avi", ".webm", ".mkv"]):
                 videos_to_send.append(file_url)
 
         if len(images_to_send) > 0:
             await clone_channel.send(
                 f"https://discord.com/channels/{message.guild.id}/{message.channel.id}/{message.id}",
                 files=images_to_send)
-            random_integer = random.randint(1, 10)
+            random_integer = random.randint(1, 3)
             await asyncio.sleep(random_integer)
 
         if len(videos_to_send) > 0:
             for video in videos_to_send:
-                random_integer = random.randint(1, 10)
+                random_integer = random.randint(1, 3)
                 await clone_channel.send(
                     f"https://discord.com/channels/{message.guild.id}/{message.channel.id}/{message.id}\n{video}")
                 await asyncio.sleep(random_integer)
@@ -77,13 +77,18 @@ async def on_message(message):
         if message.embeds:
             for embed in message.embeds:
                 if embed.url:
-                    await clone_channel.send(embed.url)
+                    embed_url = embed.url
+                    clean_embed_url = embed_url.split("?")[0]
+                    if any(clean_embed_url.endswith(ext) for ext in [".gif"]):
+                        pass
+                    else:
+                        await clone_channel.send(embed.url)
         else:
-            url_pattern = r'https?://\S+'
+            url_pattern = r"https?://\S+"
             url_match = re.findall(url_pattern, message.content)
             if url_match:
-                text_without_mentions = re.sub(r'@\S+', '', message.content)
-                random_integer = random.randint(1, 10)
+                text_without_mentions = re.sub(r"@\S+", "", message.content)
+                random_integer = random.randint(1, 3)
                 await clone_channel.send(text_without_mentions)
                 await asyncio.sleep(random_integer)
 
