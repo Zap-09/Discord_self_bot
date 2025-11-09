@@ -5,10 +5,12 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-level = os.getenv("LOG_LEVEL").lower()
+level = os.getenv("LOG_LEVEL")
 
 if not level:
     level = "info"
+else:
+    level.lower()
 
 
 def log(msg,t="info"):
