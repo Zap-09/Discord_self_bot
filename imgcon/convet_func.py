@@ -1,6 +1,6 @@
 import os
 
-from utils import log
+from .utils import log
 from PIL import Image
 
 
