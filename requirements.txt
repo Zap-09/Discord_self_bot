@@ -2,3 +2,5 @@ python-dotenv
 dotenv
 flask
 discord.py-self
+pillow
+aiohttp
