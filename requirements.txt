@@ -4,3 +4,4 @@ flask
 discord.py-self
 pillow
 aiohttp
+requests

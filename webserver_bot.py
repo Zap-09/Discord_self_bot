@@ -1,10 +1,18 @@
+import os
+
 from flask import Flask
 from threading import Thread
-
+import requests
 app = Flask("")
 
 @app.route("/")
 def home():
+    try:
+        response = requests.get(os.getenv("KEEP_ALIVE_URL"),timeout=120)
+        if response.status_code != 200:
+            print(f"Error:external server status code {response.status_code}")
+    except:
+        pass
     return "Discord bot is running"
 
 
