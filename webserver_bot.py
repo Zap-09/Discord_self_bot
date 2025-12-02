@@ -1,6 +1,6 @@
 import os
 
-from flask import Flask
+from flask import Flask, render_template
 from threading import Thread
 import requests
 app = Flask("")
@@ -13,7 +13,7 @@ def home():
             print(f"Error:external server status code {response.status_code}")
     except:
         pass
-    return "Discord bot is running"
+    return render_template("index.html")
 
 
 def run():
