@@ -3,7 +3,7 @@ import os
 from flask import Flask, render_template
 from threading import Thread
 import requests
-app = Flask("")
+app = Flask("__name__")
 
 @app.route("/")
 def home():
