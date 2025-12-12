@@ -58,7 +58,7 @@ async def on_message(message):
             if any(clean_url.endswith(ext) for ext in [".jpeg", ".png", ".jpg", ".webp"]):
                 if attachment.size > 10485760:
                     os.makedirs("Temp",exist_ok=True)
-                    async with aiohttp.ClientSession as session: # type: ignore
+                    async with aiohttp.ClientSession() as session:
                         async with session.get(file_url) as response:
                             if response.status == 200:
                                 with open(os.path.join("Temp",attachment.filename),"wb") as f:
