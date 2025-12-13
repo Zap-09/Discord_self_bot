@@ -9,7 +9,7 @@ import webserver_bot
 import aiohttp
 
 from imgcon.convet_func import convert_to_webp
-from imgcon.utils import delete_folder
+from imgcon.utils import delete_folder, send_messages
 
 load_dotenv()
 
@@ -47,6 +47,7 @@ async def on_message(message):
 
         images_to_send = []
         videos_to_send = []
+        max_file_size = 10 * 1024 * 1024
 
         for attachment in message.attachments:
             if attachment.is_spoiler():
@@ -56,7 +57,7 @@ async def on_message(message):
             clean_url = file_url.split("?")[0]
 
             if any(clean_url.endswith(ext) for ext in [".jpeg", ".png", ".jpg", ".webp"]):
-                if attachment.size > 10485760:
+                if attachment.size > max_file_size:
                     os.makedirs("Temp",exist_ok=True)
                     async with aiohttp.ClientSession() as session:
                         async with session.get(file_url) as response:
@@ -69,28 +70,38 @@ async def on_message(message):
                                         lossless=True,
                                         compress_level=6
                                     )
-                                    if new_file_size > 10485760:
-                                       convert_to_webp(
+                                    if new_file_size > max_file_size:
+                                       new_file_name,new_file_size = convert_to_webp(
                                             image_file=new_file_name,
                                             output_path=os.path.join("Converted"),
                                             lossless=False,
                                             quality= 80,
                                             compress_level=6
                                         )
-                                    discord_file = discord.File(os.path.join("Temp",attachment.filename))
-                                    images_to_send.append(discord_file)
+                                    try:
+                                        discord_file = discord.File(new_file_name)
+                                        images_to_send.append(discord_file)
+                                    except Exception as e:
+                                        send_messages(f"Error at line 83 : {e}")
                             else:
                                 print(f"Failed to download the file: {response.status}")
-                image_file = await attachment.to_file()
-                images_to_send.append(image_file)
+                else:
+                    try:
+                        image_file = await attachment.to_file()
+                        images_to_send.append(image_file)
+                    except Exception as e:
+                        send_messages(f"Error at line 90 : {e}")
 
             elif any(clean_url.endswith(ext) for ext in [".mp4", ".mov", ".avi", ".webm", ".mkv"]):
                 videos_to_send.append(file_url)
 
         if len(images_to_send) > 0:
-            await clone_channel.send(
-                f"https://discord.com/channels/{message.guild.id}/{message.channel.id}/{message.id}",
-                files=images_to_send)
+            try:
+                await clone_channel.send(
+                    f"https://discord.com/channels/{message.guild.id}/{message.channel.id}/{message.id}",
+                    files=images_to_send)
+            except Exception as e:
+                send_messages(f"Error at line 101 : {e}")
             random_integer = random.randint(1, 3)
             await asyncio.sleep(random_integer)
 
@@ -100,8 +111,8 @@ async def on_message(message):
                 await clone_channel.send(
                     f"https://discord.com/channels/{message.guild.id}/{message.channel.id}/{message.id}\n{video}")
                 await asyncio.sleep(random_integer)
-            delete_folder("Temp")
-            delete_folder("Converted")
+        delete_folder("Temp")
+        delete_folder("Converted")
 
         if len(images_to_send) and len(videos_to_send) < 1:
             return
