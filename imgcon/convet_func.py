@@ -50,7 +50,7 @@ def convert_to_webp(
 
 
     with Image.open(image_file) as img:
-        img.convert(color_mode)
+        img = img.convert(color_mode)
         file_name = os.path.basename(image_file)
         base_name, _ = os.path.splitext(file_name)
 
