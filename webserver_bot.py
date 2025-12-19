@@ -3,7 +3,12 @@ import os
 from flask import Flask, render_template
 from threading import Thread
 import requests
+import logging
+
 app = Flask("")
+
+log = logging.getLogger('werkzeug')
+log.setLevel(logging.ERROR)
 
 @app.route("/")
 def home():
