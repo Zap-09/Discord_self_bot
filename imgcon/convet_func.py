@@ -53,6 +53,8 @@ def convert_to_webp(
         img = img.convert(color_mode)
         file_name = os.path.basename(image_file)
         base_name, _ = os.path.splitext(file_name)
+        if not lossless:
+            base_name = "lossy_" + base_name
 
 
         if output_path:
