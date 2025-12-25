@@ -35,6 +35,8 @@ async def on_ready():
 
 @bot.listen("on_message")
 async def on_message(message):
+    os.makedirs("temp",exist_ok=True)
+    os.makedirs("Converted",exist_ok=True)
     if message.author == bot.user:
         return
 
