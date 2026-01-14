@@ -7,7 +7,7 @@ import logging
 
 app = Flask("")
 
-log = logging.getLogger('werkzeug')
+log = logging.getLogger("werkzeug")
 log.setLevel(logging.ERROR)
 
 @app.route("/")

@@ -1,17 +1,17 @@
 import asyncio
 import os
 import re
+import random
+import aiohttp
 import discord
 from discord.ext import commands
-import random
-from dotenv import load_dotenv
+import dotenv
+
 import webserver_bot
-import aiohttp
-
 from imgcon.convet_func import convert_to_webp
-from imgcon.utils import delete_folder, send_messages
+from imgcon.utils import delete_folder
 
-load_dotenv()
+dotenv.load_dotenv()
 
 TOKEN = os.getenv("TOKEN")
 
@@ -19,25 +19,204 @@ CHANNEL_TO_LISTEN_ID = int(os.getenv("CHANNEL_TO_LISTEN_ID"))
 
 CLONE_CHANNEL_ID = int(os.getenv("CLONE_CHANNEL_ID"))
 
-IGNORE_LIST = os.getenv("IGNORE_LIST")
+COMMAND_CHANNEL = int(os.getenv("COMMAND_CHANNEL"))
 
-IGNORE_LIST = IGNORE_LIST.split(",")
+IGNORE_LIST = os.getenv("IGNORE_LIST", "")
+FORMATED_IGNORE_LIST = [int(i) for i in IGNORE_LIST.split(",") if i]
 
-FORMATED_IGNORE_LIST = [int(i) for i in IGNORE_LIST]
+MAX_FILE_SIZE = 10 * 1024 * 1024
 
-bot = commands.Bot(command_prefix="~", self_bot=True)
+bot = commands.Bot(command_prefix="/", self_bot=True)
+
+
+def is_image_attachment(url):
+    return url.lower().endswith((".jpeg", ".png", ".jpg", ".webp"))
+
+
+def is_video_attachment(url):
+    return url.lower().endswith((".mp4", ".mov", ".avi", ".webm", ".mkv"))
+
+
+async def process_image_attachment(attachment):
+    if attachment.size <= MAX_FILE_SIZE:
+        return await attachment.to_file()
+
+    os.makedirs("Temp", exist_ok=True)
+    os.makedirs("Converted", exist_ok=True)
+
+    async with aiohttp.ClientSession() as session:
+        async with session.get(attachment.url) as resp:
+            if resp.status != 200:
+                return None
+            temp_path = os.path.join("Temp", attachment.filename)
+            with open(temp_path, "wb") as f:
+                f.write(await resp.read())
+
+    new_path, new_size = convert_to_webp(
+        image_file=temp_path,
+        output_path="Converted",
+        lossless=True,
+        compress_level=6
+    )
+
+    if new_size > MAX_FILE_SIZE:
+        new_path, new_size = convert_to_webp(
+            image_file=new_path,
+            output_path="Converted",
+            lossless=False,
+            quality=80,
+            compress_level=6
+        )
+
+    return discord.File(new_path)
+
+
+async def process_forwarded_message(snapshot, clone_channel):
+    forwarded = snapshot
+
+    content = forwarded.content or ""
+    attachments = forwarded.attachments or []
+
+    to_send_files = []
+    for att in attachments:
+        if att.is_spoiler():
+            continue
+        if att.size <= MAX_FILE_SIZE:
+            to_send_files.append(await att.to_file())
+
+    if content:
+        await clone_channel.send(content)
+
+    if to_send_files:
+        await clone_channel.send(files=to_send_files)
+
+
+async def process_message(message, clone_channel):
+    images = []
+    videos = []
+    sent_anything = False
+
+
+    for attachment in message.attachments:
+        if attachment.is_spoiler():
+            continue
+
+        clean_url = attachment.url.split("?")[0]
+        if is_image_attachment(clean_url):
+            file = await process_image_attachment(attachment)
+            if file:
+                images.append(file)
+
+        elif is_video_attachment(clean_url):
+            videos.append(attachment.url)
+
+
+    for embed in message.embeds:
+        if embed.image and embed.image.url:
+            await clone_channel.send(embed.image.url)
+            sent_anything = True
+        if embed.thumbnail and embed.thumbnail.url:
+            await clone_channel.send(embed.thumbnail.url)
+            sent_anything = True
+
+
+    if images:
+        await clone_channel.send(
+            f"https://discord.com/channels/{message.guild.id}/{message.channel.id}/{message.id}",
+            files=images
+        )
+        sent_anything = True
+        await asyncio.sleep(random.randint(1, 3))
+
+
+    for video in videos:
+        await clone_channel.send(
+            f"https://discord.com/channels/{message.guild.id}/{message.channel.id}/{message.id}\n{video}"
+        )
+        sent_anything = True
+        await asyncio.sleep(random.randint(1, 3))
+
+    # URLs/text
+    # Send each URL one at a time
+    if not sent_anything:
+        urls = re.findall(r"https?://\S+", message.content)
+
+        for link in urls:
+            await clone_channel.send(link)
+            await asyncio.sleep(random.randint(1, 3))
+
+    delete_folder("Temp")
+    delete_folder("Converted")
+
+
+async def send_as(message):
+    clone_channel = bot.get_channel(CLONE_CHANNEL_ID)
+
+    args = message.content[len("/send_as"):].strip()
+
+    urls = re.findall(r"https?://\S+", args)
+    origin = re.sub(r"https?://\S+", "", args).strip()
+
+    attachments = [att for att in message.attachments if not att.is_spoiler()]
+
+    # if everything is empty
+    if not origin and not urls and not attachments:
+        await message.channel.send(
+            "You must provide at least an origin or a link/attachment."
+        )
+        return
+
+    # If there is an origin, send it first
+    if origin:
+        await clone_channel.send(origin)
+        await asyncio.sleep(random.randint(1, 3))
+
+    # Special case: exactly one link + exactly one attachment -> send together
+    if len(urls) == 1 and len(attachments) == 1:
+        link = urls[0]
+        att = attachments[0]
+        try:
+            file = await att.to_file()
+        except:
+            file = None
+
+        if file:
+            await clone_channel.send(link, file=file)
+            await asyncio.sleep(random.randint(1, 3))
+        else:
+            await clone_channel.send(link)
+            await asyncio.sleep(random.randint(1, 3))
+
+        return
+
+    # Otherwise send URLs one by one
+    for link in urls:
+        await clone_channel.send(link)
+        await asyncio.sleep(random.randint(1, 3))
+
+    # Then send attachments one by one
+    for att in attachments:
+        try:
+            file = await att.to_file()
+        except:
+            continue
+        await clone_channel.send(file=file)
+        await asyncio.sleep(random.randint(1, 3))
+
 
 
 @bot.event
 async def on_ready():
-    print(f"Bot online")
+    print(f"Bot online as {bot.user}")
 
 
-@bot.listen("on_message")
+@bot.event
 async def on_message(message):
-    os.makedirs("temp",exist_ok=True)
-    os.makedirs("Converted",exist_ok=True)
     if message.author == bot.user:
+        return
+
+    if message.content.startswith("/send_as") and message.channel.id == COMMAND_CHANNEL:
+        await send_as(message)
         return
 
     if message.author.id in FORMATED_IGNORE_LIST:
@@ -45,97 +224,16 @@ async def on_message(message):
 
     clone_channel = bot.get_channel(CLONE_CHANNEL_ID)
 
+
+    snapshots = getattr(message, "message_snapshots", None)
+    if snapshots:
+        for snap in snapshots:
+            await process_forwarded_message(snap, clone_channel)
+        return
+
+
     if message.channel.id == CHANNEL_TO_LISTEN_ID:
-
-        images_to_send = []
-        videos_to_send = []
-        max_file_size = 10 * 1024 * 1024
-
-        for attachment in message.attachments:
-            if attachment.is_spoiler():
-                continue
-
-            file_url = attachment.url
-            clean_url = file_url.split("?")[0]
-
-            if any(clean_url.endswith(ext) for ext in [".jpeg", ".png", ".jpg", ".webp"]):
-                if attachment.size > max_file_size:
-                    os.makedirs("Temp",exist_ok=True)
-                    async with aiohttp.ClientSession() as session:
-                        async with session.get(file_url) as response:
-                            if response.status == 200:
-                                with open(os.path.join("Temp",attachment.filename),"wb") as f:
-                                    f.write(await response.read())
-                                    new_file_name,new_file_size = convert_to_webp(
-                                        image_file = os.path.join("Temp",attachment.filename),
-                                        output_path= os.path.join("Converted"),
-                                        lossless=True,
-                                        compress_level=6
-                                    )
-                                    if new_file_size > max_file_size:
-                                       new_file_name,new_file_size = convert_to_webp(
-                                            image_file=new_file_name,
-                                            output_path=os.path.join("Converted"),
-                                            lossless=False,
-                                            quality= 80,
-                                            compress_level=6
-                                        )
-                                    try:
-                                        discord_file = discord.File(new_file_name)
-                                        images_to_send.append(discord_file)
-                                    except Exception as e:
-                                        send_messages(f"Error at line 83 : {e}")
-                            else:
-                                print(f"Failed to download the file: {response.status}")
-                else:
-                    try:
-                        image_file = await attachment.to_file()
-                        images_to_send.append(image_file)
-                    except Exception as e:
-                        send_messages(f"Error at line 90 : {e}")
-
-            elif any(clean_url.endswith(ext) for ext in [".mp4", ".mov", ".avi", ".webm", ".mkv"]):
-                videos_to_send.append(file_url)
-
-        if len(images_to_send) > 0:
-            try:
-                await clone_channel.send(
-                    f"https://discord.com/channels/{message.guild.id}/{message.channel.id}/{message.id}",
-                    files=images_to_send)
-            except Exception as e:
-                send_messages(f"Error at line 101 : {e}")
-            random_integer = random.randint(1, 3)
-            await asyncio.sleep(random_integer)
-
-        if len(videos_to_send) > 0:
-            for video in videos_to_send:
-                random_integer = random.randint(1, 3)
-                await clone_channel.send(
-                    f"https://discord.com/channels/{message.guild.id}/{message.channel.id}/{message.id}\n{video}")
-                await asyncio.sleep(random_integer)
-        delete_folder("Temp")
-        delete_folder("Converted")
-
-        if len(images_to_send) and len(videos_to_send) < 1:
-            return
-
-        if message.embeds:
-            for embed in message.embeds:
-                if embed.url:
-                    embed_url = embed.url
-                    clean_embed_url = embed_url.split("?")[0]
-                    if any(clean_embed_url.endswith(ext) for ext in [".gif"]):
-                        pass
-                    else:
-                        await clone_channel.send(embed.url)
-        else:
-            url_pattern = r"https?://\S+"
-            url_match = re.findall(url_pattern, message.content)
-            if url_match:
-                text_without_mentions = re.sub(r"@\S+", "", message.content)
-                random_integer = random.randint(1, 3)
-                await clone_channel.send(text_without_mentions)
-                await asyncio.sleep(random_integer)
+        await process_message(message, clone_channel)
 
 
 webserver_bot.keep_alive()
