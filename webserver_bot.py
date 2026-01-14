@@ -10,14 +10,24 @@ app = Flask("")
 log = logging.getLogger("werkzeug")
 log.setLevel(logging.ERROR)
 
-@app.route("/")
-def home():
+def ping(url):
     try:
-        response = requests.get(os.getenv("KEEP_ALIVE_URL"),timeout=120)
+        response = requests.get(url,timeout=120)
         if response.status_code != 200:
             print(f"Error:external server status code {response.status_code}")
     except:
         pass
+
+def ping_website(url):
+    if url is None:
+        return
+    t = Thread(target=ping, args=(url,))
+    t.start()
+
+@app.route("/")
+def home():
+    ping_website(os.getenv("KEEP_ALIVE_URL"))
+    ping_website(os.getenv("KEEP_ALIVE_OTHER_BOT",None))
     return render_template("index.html")
 
 

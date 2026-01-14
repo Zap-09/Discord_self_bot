@@ -153,54 +153,41 @@ async def send_as(message):
     clone_channel = bot.get_channel(CLONE_CHANNEL_ID)
 
     args = message.content[len("/send_as"):].strip()
-
-    urls = re.findall(r"https?://\S+", args)
-    origin = re.sub(r"https?://\S+", "", args).strip()
+    origin = args.strip()
 
     attachments = [att for att in message.attachments if not att.is_spoiler()]
 
-    # if everything is empty
-    if not origin and not urls and not attachments:
-        await message.channel.send(
-            "You must provide at least an origin or a link/attachment."
-        )
+    if not origin and not attachments:
+        await message.channel.send("You must provide at least an origin or attachments.")
         return
 
-    # If there is an origin, send it first
-    if origin:
-        await clone_channel.send(origin)
-        await asyncio.sleep(random.randint(1, 3))
-
-    # Special case: exactly one link + exactly one attachment -> send together
-    if len(urls) == 1 and len(attachments) == 1:
-        link = urls[0]
-        att = attachments[0]
-        try:
-            file = await att.to_file()
-        except:
-            file = None
-
-        if file:
-            await clone_channel.send(link, file=file)
-            await asyncio.sleep(random.randint(1, 3))
-        else:
-            await clone_channel.send(link)
-            await asyncio.sleep(random.randint(1, 3))
-
-        return
-
-    # Otherwise send URLs one by one
-    for link in urls:
-        await clone_channel.send(link)
-        await asyncio.sleep(random.randint(1, 3))
-
-    # Then send attachments one by one
+    files = []
     for att in attachments:
         try:
-            file = await att.to_file()
+            files.append(await att.to_file())
         except:
             continue
-        await clone_channel.send(file=file)
+
+    if files:
+        await clone_channel.send(origin,files=files)
+        await asyncio.sleep(random.randint(1, 3))
+    else:
+        if origin:
+            await clone_channel.send(origin)
+            await asyncio.sleep(random.randint(1, 3))
+
+
+
+async def send_embed(message):
+    clone_channel = bot.get_channel(CLONE_CHANNEL_ID)
+
+    urls = re.findall(r"https?://\S+", message.content)
+    if not urls:
+        await message.channel.send("No URLs found to send as embed.")
+        return
+
+    for link in urls:
+        await clone_channel.send(link)
         await asyncio.sleep(random.randint(1, 3))
 
 
@@ -210,6 +197,7 @@ async def on_ready():
     print(f"Bot online as {bot.user}")
 
 
+
 @bot.event
 async def on_message(message):
     if message.author == bot.user:
@@ -217,6 +205,10 @@ async def on_message(message):
 
     if message.content.startswith("/send_as") and message.channel.id == COMMAND_CHANNEL:
         await send_as(message)
+        return
+
+    if message.content.startswith("/send_embed") and message.channel.id == COMMAND_CHANNEL:
+        await send_embed(message)
         return
 
     if message.author.id in FORMATED_IGNORE_LIST:
