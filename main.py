@@ -38,8 +38,12 @@ def is_video_attachment(url):
 
 
 async def process_image_attachment(attachment):
+    used_temp = False
+
     if attachment.size <= MAX_FILE_SIZE:
-        return await attachment.to_file()
+        return await attachment.to_file(), used_temp
+
+    used_temp = True
 
     os.makedirs("Temp", exist_ok=True)
     os.makedirs("Converted", exist_ok=True)
@@ -47,7 +51,7 @@ async def process_image_attachment(attachment):
     async with aiohttp.ClientSession() as session:
         async with session.get(attachment.url) as resp:
             if resp.status != 200:
-                return None
+                return None, used_temp
             temp_path = os.path.join("Temp", attachment.filename)
             with open(temp_path, "wb") as f:
                 f.write(await resp.read())
@@ -68,27 +72,47 @@ async def process_image_attachment(attachment):
             compress_level=6
         )
 
-    return discord.File(new_path)
+    return discord.File(new_path), used_temp
+
 
 
 async def process_forwarded_message(snapshot, clone_channel):
-    forwarded = snapshot
+    content = snapshot.content or ""
+    attachments = snapshot.attachments or []
+    embeds = snapshot.embeds or []
 
-    content = forwarded.content or ""
-    attachments = forwarded.attachments or []
+    sent_anything = False
 
-    to_send_files = []
+    for embed in embeds:
+        if embed.url:
+            await clone_channel.send(embed.url)
+            sent_anything = True
+            await asyncio.sleep(random.randint(1, 3))
+
+    files = []
     for att in attachments:
         if att.is_spoiler():
             continue
-        if att.size <= MAX_FILE_SIZE:
-            to_send_files.append(await att.to_file())
 
-    if content:
-        await clone_channel.send(content)
+        if att.content_type:
+            if att.content_type.startswith("image") or att.content_type.startswith("video"):
+                if att.size <= MAX_FILE_SIZE:
+                    try:
+                        files.append(await att.to_file())
+                    except:
+                        pass
 
-    if to_send_files:
-        await clone_channel.send(files=to_send_files)
+    if files:
+        await clone_channel.send(files=files)
+        sent_anything = True
+        await asyncio.sleep(random.randint(1, 3))
+
+    if not sent_anything:
+        urls = re.findall(r"https?://\S+", content)
+        for url in urls:
+            await clone_channel.send(url)
+            await asyncio.sleep(random.randint(1, 3))
+
 
 
 async def process_message(message, clone_channel):
@@ -96,6 +120,7 @@ async def process_message(message, clone_channel):
     videos = []
     sent_anything = False
 
+    used_temp = False
 
     for attachment in message.attachments:
         if attachment.is_spoiler():
@@ -103,20 +128,23 @@ async def process_message(message, clone_channel):
 
         clean_url = attachment.url.split("?")[0]
         if is_image_attachment(clean_url):
-            file = await process_image_attachment(attachment)
+            file, temp_used = await process_image_attachment(attachment)
             if file:
                 images.append(file)
+            if temp_used:
+                used_temp = True
 
         elif is_video_attachment(clean_url):
             videos.append(attachment.url)
 
 
+
     for embed in message.embeds:
         if embed.image and embed.image.url:
-            await clone_channel.send(embed.image.url)
+            await clone_channel.send(f"{message.jump_url}\n{embed.url}")
             sent_anything = True
         if embed.thumbnail and embed.thumbnail.url:
-            await clone_channel.send(embed.thumbnail.url)
+            await clone_channel.send(f"{message.jump_url}\n{embed.thumbnail.url}")
             sent_anything = True
 
 
@@ -145,8 +173,10 @@ async def process_message(message, clone_channel):
             await clone_channel.send(link)
             await asyncio.sleep(random.randint(1, 3))
 
-    delete_folder("Temp")
-    delete_folder("Converted")
+
+    if used_temp:
+        delete_folder("Temp")
+        delete_folder("Converted")
 
 
 async def send_as(message):
@@ -218,7 +248,7 @@ async def on_message(message):
 
 
     snapshots = getattr(message, "message_snapshots", None)
-    if snapshots:
+    if snapshots and message.channel.id == CHANNEL_TO_LISTEN_ID:
         for snap in snapshots:
             await process_forwarded_message(snap, clone_channel)
         return
