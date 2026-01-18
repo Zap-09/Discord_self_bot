@@ -75,17 +75,18 @@ async def process_image_attachment(attachment):
     return discord.File(new_path), used_temp
 
 
-
-async def process_forwarded_message(snapshot, clone_channel):
+async def process_forwarded_message(snapshot, clone_channel, parent_message):
     content = snapshot.content or ""
     attachments = snapshot.attachments or []
     embeds = snapshot.embeds or []
+
+    jump_link = f"https://discord.com/channels/{parent_message.guild.id}/{parent_message.channel.id}/{parent_message.id}"
 
     sent_anything = False
 
     for embed in embeds:
         if embed.url:
-            await clone_channel.send(embed.url)
+            await clone_channel.send(f"{jump_link}\n{embed.url}")
             sent_anything = True
             await asyncio.sleep(random.randint(1, 3))
 
@@ -95,7 +96,7 @@ async def process_forwarded_message(snapshot, clone_channel):
             continue
 
         if att.content_type:
-            if att.content_type.startswith("image") or att.content_type.startswith("video"):
+            if att.content_type.startswith(("image", "video")):
                 if att.size <= MAX_FILE_SIZE:
                     try:
                         files.append(await att.to_file())
@@ -103,30 +104,29 @@ async def process_forwarded_message(snapshot, clone_channel):
                         pass
 
     if files:
-        await clone_channel.send(files=files)
+        await clone_channel.send(jump_link, files=files)
         sent_anything = True
         await asyncio.sleep(random.randint(1, 3))
 
     if not sent_anything:
         urls = re.findall(r"https?://\S+", content)
         for url in urls:
-            await clone_channel.send(url)
+            await clone_channel.send(f"{jump_link}\n{url}")
             await asyncio.sleep(random.randint(1, 3))
-
 
 
 async def process_message(message, clone_channel):
     images = []
     videos = []
-    sent_anything = False
-
     used_temp = False
+    sent_anything = False
 
     for attachment in message.attachments:
         if attachment.is_spoiler():
             continue
 
         clean_url = attachment.url.split("?")[0]
+
         if is_image_attachment(clean_url):
             file, temp_used = await process_image_attachment(attachment)
             if file:
@@ -137,17 +137,6 @@ async def process_message(message, clone_channel):
         elif is_video_attachment(clean_url):
             videos.append(attachment.url)
 
-
-
-    for embed in message.embeds:
-        if embed.image and embed.image.url:
-            await clone_channel.send(f"{message.jump_url}\n{embed.url}")
-            sent_anything = True
-        if embed.thumbnail and embed.thumbnail.url:
-            await clone_channel.send(f"{message.jump_url}\n{embed.thumbnail.url}")
-            sent_anything = True
-
-
     if images:
         await clone_channel.send(
             f"https://discord.com/channels/{message.guild.id}/{message.channel.id}/{message.id}",
@@ -156,7 +145,6 @@ async def process_message(message, clone_channel):
         sent_anything = True
         await asyncio.sleep(random.randint(1, 3))
 
-
     for video in videos:
         await clone_channel.send(
             f"https://discord.com/channels/{message.guild.id}/{message.channel.id}/{message.id}\n{video}"
@@ -164,15 +152,36 @@ async def process_message(message, clone_channel):
         sent_anything = True
         await asyncio.sleep(random.randint(1, 3))
 
-    # URLs/text
-    # Send each URL one at a time
+    if message.embeds:
+        for embed in message.embeds:
+            if embed.image and embed.image.url:
+                await clone_channel.send(
+                    f"https://discord.com/channels/{message.guild.id}/{message.channel.id}/{message.id}\n{embed.image.url}"
+                )
+                sent_anything = True
+                await asyncio.sleep(random.randint(1, 3))
+
+            elif embed.thumbnail and embed.thumbnail.url:
+                await clone_channel.send(
+                    f"https://discord.com/channels/{message.guild.id}/{message.channel.id}/{message.id}\n{embed.thumbnail.url}"
+                )
+                sent_anything = True
+                await asyncio.sleep(random.randint(1, 3))
+
+            elif embed.url:
+                await clone_channel.send(
+                    f"https://discord.com/channels/{message.guild.id}/{message.channel.id}/{message.id}\n{embed.url}"
+                )
+                sent_anything = True
+                await asyncio.sleep(random.randint(1, 3))
+
     if not sent_anything:
         urls = re.findall(r"https?://\S+", message.content)
-
         for link in urls:
-            await clone_channel.send(link)
+            await clone_channel.send(
+                f"https://discord.com/channels/{message.guild.id}/{message.channel.id}/{message.id}\n{link}"
+            )
             await asyncio.sleep(random.randint(1, 3))
-
 
     if used_temp:
         delete_folder("Temp")
@@ -250,7 +259,7 @@ async def on_message(message):
     snapshots = getattr(message, "message_snapshots", None)
     if snapshots and message.channel.id == CHANNEL_TO_LISTEN_ID:
         for snap in snapshots:
-            await process_forwarded_message(snap, clone_channel)
+            await process_forwarded_message(snap, clone_channel, message)
         return
 
 
