@@ -7,8 +7,12 @@ import logging
 
 app = Flask("")
 
-log = logging.getLogger("werkzeug")
-log.setLevel(logging.ERROR)
+class RequestFilter(logging.Filter):
+    def filter(self, record):
+        return "GET /" not in record.getMessage() and "POST /" not in record.getMessage()
+
+werkzeug_logger = logging.getLogger("werkzeug")
+werkzeug_logger.addFilter(RequestFilter())
 
 def ping(url):
     try:
