@@ -1,6 +1,7 @@
 import os
 import shutil
 import requests
+import re
 
 from dotenv import load_dotenv
 
@@ -44,7 +45,6 @@ def log(msg,t="info"):
         print(msg)
 
 
-
 def delete_folder(folder_path):
     if os.path.exists(folder_path):
         try:
@@ -67,3 +67,22 @@ def send_messages(message:str):
     response = requests.post(url,headers=headers,json=payload)
     if not response.status_code in (200,201):
         print(f"Failed to send the message: {response.status_code} - {response.text}")
+
+
+
+msg_regex = re.compile(r'^https?://(?:ptb\.|canary\.)?discord(?:app)?\.com/channels/(\d+)/(\d+)/(\d+)$')
+def extract_ids(url: str):
+    match = msg_regex.fullmatch(url)
+    if match:
+        guild_id, channel_id, message_id = map(int, match.groups())
+        return guild_id, channel_id, message_id
+    return None
+
+
+def get_args(message_content:str, command:str):
+    if not message_content.startswith(command):
+        return []
+    content = message_content[len(command):].strip()
+    if not content:
+        return []
+    return content.split()

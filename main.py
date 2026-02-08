@@ -5,11 +5,12 @@ import random
 import aiohttp
 import discord
 from discord.ext import commands
+from discord import Message as DisMessage
 import dotenv
 
 import webserver_bot
 from imgcon.convet_func import convert_to_webp
-from imgcon.utils import delete_folder
+from imgcon.utils import delete_folder, get_args, extract_ids
 
 dotenv.load_dotenv()
 
@@ -116,6 +117,12 @@ async def process_forwarded_message(snapshot, clone_channel, parent_message):
 
 
 async def process_message(message, clone_channel):
+    if message.author.bot:
+        return
+
+    if message.author.id in FORMATED_IGNORE_LIST:
+        return
+
     message_link = f"https://discord.com/channels/{message.guild.id}/{message.channel.id}/{message.id}"
     used_temp = False
 
@@ -140,23 +147,19 @@ async def process_message(message, clone_channel):
             elif is_video_attachment(clean_url):
                 video_urls.append(attachment.url)
 
-
         if image_files:
             await clone_channel.send(message_link, files=image_files)
             return
-
 
         if video_urls:
             for video in video_urls:
                 await clone_channel.send(f"{message_link}\n{video}")
             return
 
-
         for embed in message.embeds:
             if embed.url:
                 await clone_channel.send(f"{message_link}\n{embed.url}")
                 return
-
 
         urls = re.findall(r"https?://\S+", message.content)
         for url in urls:
@@ -188,13 +191,12 @@ async def send_as(message):
             continue
 
     if files:
-        await clone_channel.send(origin,files=files)
+        await clone_channel.send(origin, files=files)
         await asyncio.sleep(random.randint(1, 3))
     else:
         if origin:
             await clone_channel.send(origin)
             await asyncio.sleep(random.randint(1, 3))
-
 
 
 async def send_embed(message):
@@ -210,11 +212,70 @@ async def send_embed(message):
         await asyncio.sleep(random.randint(1, 3))
 
 
+async def status(message):
+    await message.channel.send("Bot is online")
+
+
+async def get_after(message: DisMessage):
+    clone_channel = bot.get_channel(CLONE_CHANNEL_ID)
+    args = get_args(message.content, "/get_after")
+    if not args:
+        await message.channel.send("You Need at least an arg.")
+        return
+
+    if len(args) != 2:
+        await message.channel.send("This command can only take two arguments.")
+        return
+
+    ids = extract_ids(args[0])
+    if ids is None:
+        await message.channel.send("This this a invalid discord link")
+        return
+
+    _server_id, channel_id, message_id = ids
+    target_channel = bot.get_channel(channel_id)
+
+    if not target_channel:
+        await message.channel.send("Channel not found or I doesn't have access!")
+        return
+
+    try:
+        target_message = await target_channel.fetch_message(message_id)
+    except discord.NotFound:
+        await message.channel.send("Message not found.")
+        return
+    except discord.Forbidden:
+        await message.channel.send("No access to that message.")
+        return
+
+
+    limit = args[1]
+
+    if limit.lower() == "none":
+        limit = None
+    else:
+        try:
+            limit = int(limit)
+        except ValueError:
+            await message.channel.send("The second arg can only be a integer.")
+            return
+
+    await process_message(target_message, clone_channel)
+    await asyncio.sleep(random.randint(1, 3))
+
+    async for m in target_channel.history(
+            after=target_message,
+            oldest_first=True,
+            limit=limit,
+    ):
+        await process_message(m, clone_channel)
+        await asyncio.sleep(random.randint(1, 3))
+    return
+
 
 @bot.event
 async def on_ready():
     print(f"Bot online as {bot.user}")
-
 
 
 @bot.event
@@ -230,18 +291,22 @@ async def on_message(message):
         await send_embed(message)
         return
 
+    if message.content.startswith("/status") and message.channel.id == COMMAND_CHANNEL:
+        await status(message)
+
+    if message.content.startswith("/get_after") and message.channel.id == COMMAND_CHANNEL:
+        await get_after(message)
+
     if message.author.id in FORMATED_IGNORE_LIST:
         return
 
     clone_channel = bot.get_channel(CLONE_CHANNEL_ID)
-
 
     snapshots = getattr(message, "message_snapshots", None)
     if snapshots and message.channel.id == CHANNEL_TO_LISTEN_ID:
         for snap in snapshots:
             await process_forwarded_message(snap, clone_channel, message)
         return
-
 
     if message.channel.id == CHANNEL_TO_LISTEN_ID:
         await process_message(message, clone_channel)
